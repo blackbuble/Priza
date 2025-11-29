@@ -100,6 +100,9 @@
             show: @entangle('showConfetti'),
             countdown: 10,
             init() {
+                // Play clapping sound
+                this.playClappingSound();
+                
                 // Start countdown timer
                 const timer = setInterval(() => {
                     this.countdown--;
@@ -109,6 +112,13 @@
                         @this.call('hideConfetti');
                     }
                 }, 1000);
+            },
+            playClappingSound() {
+                const audio = document.getElementById('clapping-sound');
+                if (audio) {
+                    audio.volume = 0.7;
+                    audio.play().catch(e => console.log('Audio play failed:', e));
+                }
             }
         }" 
         x-show="show"
@@ -138,7 +148,6 @@
                     >
                         Tutup (<span x-text="countdown"></span> detik)
                     </button>
-                    
                 </div>
             </div>
         </div>
@@ -217,6 +226,14 @@
     </div>
     @endif
 
+    <!-- Hidden Audio Element -->
+    <audio id="clapping-sound" preload="auto">
+     
+        <source src="{{ asset('sounds/sound-clapps.wav') }}" type="audio/wav">
+        <source src="https://assets.mixkit.co/sfx/preview/mixkit-audience-clapping-strongly-476.mp3" type="audio/mpeg">
+        <!-- Fallback to base64 encoded sound if files don't exist -->
+    </audio>
+
     <style>
         @keyframes bounce-in {
             0% {
@@ -242,6 +259,57 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Create fallback clapping sound using Web Audio API if audio file is not available
+            function createFallbackClappingSound() {
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const duration = 2; // seconds
+                    const sampleRate = audioContext.sampleRate;
+                    const frameCount = sampleRate * duration;
+                    
+                    const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
+                    const channelData = buffer.getChannelData(0);
+                    
+                    // Generate clapping sound (white noise bursts)
+                    for (let i = 0; i < frameCount; i++) {
+                        // Create rhythmic clapping pattern
+                        const time = i / sampleRate;
+                        const clapRate = 8; // claps per second
+                        const clapPosition = (time * clapRate) % 1;
+                        
+                        if (clapPosition < 0.1) { // Short clap burst
+                            channelData[i] = (Math.random() * 2 - 1) * Math.exp(-clapPosition * 50);
+                        } else {
+                            channelData[i] = 0;
+                        }
+                    }
+                    
+                    const source = audioContext.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(audioContext.destination);
+                    return source;
+                } catch (e) {
+                    console.log('Web Audio API not supported:', e);
+                    return null;
+                }
+            }
+
+            // Check if audio element has valid source and create fallback if needed
+            const audioElement = document.getElementById('clapping-sound');
+            if (audioElement) {
+                audioElement.addEventListener('error', function() {
+                    console.log('Audio file not found, using fallback sound');
+                    const fallbackSound = createFallbackClappingSound();
+                    if (fallbackSound) {
+                        // Replace the audio element's play function
+                        audioElement.play = function() {
+                            fallbackSound.start();
+                            return Promise.resolve();
+                        };
+                    }
+                });
+            }
+
             // Confetti animation
             window.addEventListener('winner-drawn', event => {
                 const duration = 10 * 1000;
