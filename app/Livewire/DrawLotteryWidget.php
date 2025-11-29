@@ -11,6 +11,8 @@ class DrawLotteryWidget extends Component
     public $stats = [];
     public $latestWinners = [];
     public $showConfetti = false;
+    public $isDrawing = false;
+    public $currentWinner = null;
     
     protected $listeners = ['refreshWidget' => '$refresh'];
     
@@ -36,12 +38,11 @@ class DrawLotteryWidget extends Component
     public function loadLatestWinners()
     {
         $this->latestWinners = \App\Models\Winner::with('coupon')
-            ->where('status', '!=', 'cancelled') // Only show active winners
+            ->whereIn('status', ['pending', 'confirmed'])
             ->orderBy('position', 'asc')
             ->take(5)
             ->get()
             ->map(function($winner) {
-                // Ensure we have safe data access
                 return [
                     'id' => $winner->id,
                     'position' => $winner->position,
@@ -67,9 +68,18 @@ class DrawLotteryWidget extends Component
                 return;
             }
             
-            $winners = $lotteryService->drawWinners();
+            // Start drawing animation
+            $this->isDrawing = true;
+            $this->dispatch('start-drawing');
+            
+            // Small delay for animation effect
+            usleep(500000); // 0.5 second
+            
+            // Draw single winner
+            $winners = $lotteryService->drawWinners(1);
             
             if (empty($winners)) {
+                $this->isDrawing = false;
                 Notification::make()
                     ->warning()
                     ->title('Tidak Ada Pemenang')
@@ -78,26 +88,31 @@ class DrawLotteryWidget extends Component
                 return;
             }
             
+            $this->currentWinner = $winners[0];
             $this->showConfetti = true;
+            $this->isDrawing = false;
+            
             $this->loadStats();
             $this->loadLatestWinners();
-            
-            $winnerNames = collect($winners)->pluck('owner_name')->filter()->implode(', ');
             
             Notification::make()
                 ->success()
                 ->title('🎉 Selamat! Pemenang Terpilih')
-                ->body($winnerNames ? "Pemenang: {$winnerNames}" : "Pemenang telah terpilih")
+                ->body("Pemenang posisi {$this->currentWinner['position']}: {$this->currentWinner['owner_name']}")
                 ->duration(5000)
                 ->send();
             
-            // Dispatch event for confetti and refresh
-            $this->dispatch('winner-drawn');
+            // Dispatch confetti event
+            $this->dispatch('winner-drawn', winner: $this->currentWinner);
+
+            // Auto hide confetti after 5 seconds - PUT IT HERE
+            $this->dispatch('hide-confetti-after-delay');
             
-            // Hide confetti after 3 seconds
-            $this->dispatch('hide-confetti');
+            // Auto hide confetti after 5 seconds
+            // $this->dispatch('hide-confetti')->delay(5000);
             
         } catch (\Exception $e) {
+            $this->isDrawing = false;
             logger()->error('Draw lottery error: ' . $e->getMessage());
             
             Notification::make()
@@ -106,6 +121,12 @@ class DrawLotteryWidget extends Component
                 ->body('Terjadi kesalahan saat mengundi. Silakan coba lagi.')
                 ->send();
         }
+    }
+    
+    public function hideConfetti()
+    {
+        $this->showConfetti = false;
+        $this->currentWinner = null;
     }
     
     public function refreshData()

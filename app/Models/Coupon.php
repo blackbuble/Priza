@@ -13,17 +13,25 @@ class Coupon extends Model
         return $this->hasOne(Winner::class);
     }
 
+    public function activeWinner()
+    {
+        return $this->hasOne(Winner::class)->whereIn('status', ['pending', 'confirmed']);
+    }
+
     public function isWinner()
     {
-        return $this->winner()->whereIn('status', ['pending', 'confirmed'])->exists();
+        return $this->activeWinner()->exists();
     }
 
     /**
      * Scope for coupons available for drawing
+     * Excludes coupons that are currently winners (pending or confirmed)
      */
     public function scopeAvailableForDraw($query)
     {
-        return $query->whereDoesntHave('winner');
+        return $query->whereDoesntHave('winner', function($q) {
+            $q->whereIn('status', ['pending', 'confirmed']);
+        });
     }
 
     /**
@@ -31,7 +39,9 @@ class Coupon extends Model
      */
     public function scopeHasWon($query)
     {
-        return $query->whereHas('winner');
+        return $query->whereHas('winner', function($q) {
+            $q->whereIn('status', ['pending', 'confirmed']);
+        });
     }
 
     /**
@@ -39,6 +49,6 @@ class Coupon extends Model
      */
     public function isAvailableForDraw(): bool
     {
-        return !$this->winner()->exists();
+        return !$this->activeWinner()->exists();
     }
 }
