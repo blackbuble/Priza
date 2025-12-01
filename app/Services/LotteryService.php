@@ -12,8 +12,8 @@ class LotteryService
 {
     public function getTotalWinners(): int
     {
-        // return (int) LotterySetting::get('total_winners', 10);
-        return config('lottery.total_winners', 10);
+        $setting = LotterySetting::where('key', 'total_winners')->first();
+        return $setting ? (int) $setting->value : 10;
     }
 
     public function getActiveWinnersCount(): int

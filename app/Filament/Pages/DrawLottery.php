@@ -76,12 +76,18 @@ class DrawLottery extends Page
     {
         return [
             Action::make('draw')
-                ->label('Undi Pemenang')
-                ->icon('heroicon-o-sparkles')
-                ->action('drawWinners')
-                ->color('success')
-                ->disabled(!$this->stats['can_draw']),
-                
+            ->label('Undi Pemenang')
+            ->icon('heroicon-o-sparkles')
+            ->action('drawWinners')
+            ->color('success')
+            ->disabled(!$this->stats['can_draw'])
+            ->button()
+            ->outlined()
+            ->extraAttributes(fn (Action $action) => [
+                'class' => $action->isDisabled() 
+                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400 border-gray-300 dark:border-gray-700 cursor-not-allowed opacity-70' 
+                    : 'bg-success-50 dark:bg-success-900/20 text-success-700 dark:text-success-300 border-success-200 dark:border-success-700 hover:bg-success-100 dark:hover:bg-success-900/30 transition-colors',
+            ]),
             // Action::make('settings')
             //     ->label('Pengaturan')
             //     ->icon('heroicon-o-cog-6-tooth')

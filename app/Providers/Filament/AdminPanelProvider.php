@@ -28,6 +28,7 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->brandName('Sistem Pengundian Kupon')
+            ->brandLogoHeight('2.5rem')
             ->brandLogo(asset('images/logo.png'))
             ->favicon(asset('images/favicon.png'))
             ->colors([
