@@ -18,14 +18,14 @@ class LotteryService
 
     public function getActiveWinnersCount(): int
     {
-        return Winner::whereIn('status', ['pending', 'confirmed'])->count();
+        return Winner::whereIn('status', Winner::ACTIVE_STATUSES)->count();
     }
 
     public function getRemainingSlots(): int
     {
         $totalWinners = $this->getTotalWinners();
         $activeWinners = $this->getActiveWinnersCount();
-        
+
         return max(0, $totalWinners - $activeWinners);
     }
 
@@ -33,7 +33,7 @@ class LotteryService
     {
         $remainingSlots = $this->getRemainingSlots();
         $availableCoupons = Coupon::availableForDraw()->count();
-        
+
         return $remainingSlots > 0 && $availableCoupons > 0;
     }
 
@@ -42,7 +42,7 @@ class LotteryService
      */
     public function getNextAvailablePosition(): int
     {
-        $maxPosition = Winner::whereIn('status', ['pending', 'confirmed'])->max('position');
+        $maxPosition = Winner::whereIn('status', Winner::ACTIVE_STATUSES)->max('position');
         return ($maxPosition ?? 0) + 1;
     }
 
@@ -52,7 +52,7 @@ class LotteryService
     public function getAvailablePositions(): array
     {
         $totalWinners = $this->getTotalWinners();
-        $usedPositions = Winner::whereIn('status', ['pending', 'confirmed'])
+        $usedPositions = Winner::whereIn('status', Winner::ACTIVE_STATUSES)
             ->pluck('position')
             ->toArray();
 
@@ -61,6 +61,11 @@ class LotteryService
             if (!in_array($i, $usedPositions)) {
                 $availablePositions[] = $i;
             }
+        }
+
+        $direction = LotterySetting::getValue('draw_direction', 'forward');
+        if ($direction === 'reverse') {
+            rsort($availablePositions);
         }
 
         return $availablePositions;
@@ -72,7 +77,7 @@ class LotteryService
     public function reorganizePositions(): void
     {
         DB::transaction(function () {
-            $winners = Winner::whereIn('status', ['pending', 'confirmed'])
+            $winners = Winner::whereIn('status', Winner::ACTIVE_STATUSES)
                 ->orderBy('position')
                 ->orderBy('drawn_at')
                 ->get();
@@ -88,7 +93,7 @@ class LotteryService
     /**
      * Draw winners with drawn_at timestamp
      */
-    public function drawWinners(int $count = null): array
+    public function drawWinners(?int $count = null): array
     {
         if (!$count) {
             $count = $this->getRemainingSlots();
@@ -103,26 +108,26 @@ class LotteryService
         $positionsToAssign = array_slice($availablePositions, 0, $count);
 
         // Get random coupons that haven't won yet or have been cancelled
-        $winners = Coupon::whereDoesntHave('winner', function($query) {
-                $query->whereIn('status', ['pending', 'confirmed']);
-            })
+        $winners = Coupon::whereDoesntHave('winner', function ($query) {
+            $query->whereIn('status', Winner::ACTIVE_STATUSES);
+        })
             ->inRandomOrder()
             ->limit($count)
             ->get();
 
         $drawnWinners = [];
         $drawnAt = now();
-        
+
         foreach ($winners as $index => $coupon) {
             $position = $positionsToAssign[$index] ?? $this->getNextAvailablePosition();
-            
+
             $winner = Winner::create([
                 'coupon_id' => $coupon->id,
                 'status' => 'pending',
                 'drawn_at' => $drawnAt,
                 'position' => $position,
             ]);
-            
+
             $drawnWinners[] = [
                 'id' => $winner->id,
                 'position' => $winner->position,
@@ -158,7 +163,7 @@ class LotteryService
                 'cancelled_at' => now(),
                 'cancellation_reason' => $reason,
             ]);
-            
+
             // Reorganize positions to eliminate gaps
             $this->reorganizePositions();
         });
@@ -179,7 +184,7 @@ class LotteryService
      */
     public function getWinnersByPosition(): array
     {
-        return Winner::whereIn('status', ['pending', 'confirmed'])
+        return Winner::whereIn('status', Winner::ACTIVE_STATUSES)
             ->with('coupon')
             ->orderBy('position')
             ->get()
@@ -192,7 +197,7 @@ class LotteryService
     public function getWinnerByPosition(int $position): ?Winner
     {
         return Winner::where('position', $position)
-            ->whereIn('status', ['pending', 'confirmed'])
+            ->whereIn('status', Winner::ACTIVE_STATUSES)
             ->first();
     }
 
@@ -202,7 +207,7 @@ class LotteryService
     public function getLatestDrawnWinners(int $limit = 10): array
     {
         return Winner::with('coupon')
-            ->whereIn('status', ['pending', 'confirmed'])
+            ->whereIn('status', Winner::ACTIVE_STATUSES)
             ->orderBy('position', 'asc')
             ->limit($limit)
             ->get()

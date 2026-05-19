@@ -3,62 +3,80 @@
 namespace App\Livewire;
 
 use Livewire\Component;
+use App\Models\Coupon;
+use App\Models\LotterySetting;
 use App\Services\LotteryService;
 use Filament\Notifications\Notification;
 
 class DrawLotteryWidget extends Component
 {
-    public $stats = [];
-    public $latestWinners = [];
-    public $showConfetti = false;
-    public $isDrawing = false;
-    public $currentWinner = null;
-    
+    public array $stats = [];
+    public array $latestWinners = [];
+    public bool $showConfetti = false;
+    public bool $isDrawing = false;
+    public ?array $currentWinner = null;
+
+    /** Number of winners to draw in one click */
+    public int $drawCount = 1;
+
+    /** All coupon owner-names — sent to Alpine for the shuffle animation */
+    public array $couponNames = [];
+
+    /** Direction to sort winners: asc | desc */
+    public string $orderDir = 'asc';
+
+    /** Whether to show actual names during shuffling */
+    public bool $showShuffleNames = true;
+
     protected $listeners = ['refreshWidget' => '$refresh'];
-    
-    public function mount()
+
+    public function mount(): void
     {
+        $this->drawCount = (int) LotterySetting::getValue('draw_count_ui', 1);
+        $this->orderDir = LotterySetting::getValue('winner_order_ui', 'asc');
+        $this->showShuffleNames = (bool) LotterySetting::getValue('show_shuffle_names_ui', true);
+
+        $this->couponNames = Coupon::pluck('owner_name')->shuffle()->values()->toArray();
         $this->loadStats();
         $this->loadLatestWinners();
     }
-    
-    public function loadStats()
+
+    public function loadStats(): void
     {
         $lotteryService = app(LotteryService::class);
-        
+
         $this->stats = [
-            'total_coupons' => \App\Models\Coupon::count(),
+            'total_coupons' => Coupon::count(),
             'total_winners_setting' => $lotteryService->getTotalWinners(),
             'active_winners' => $lotteryService->getActiveWinnersCount(),
             'remaining_slots' => $lotteryService->getRemainingSlots(),
             'can_draw' => $lotteryService->canDraw(),
         ];
     }
-    
-    public function loadLatestWinners()
+
+    public function loadLatestWinners(): void
     {
         $this->latestWinners = \App\Models\Winner::with('coupon')
-            ->whereIn('status', ['pending', 'confirmed'])
-            ->orderBy('position', 'asc')
-            ->take(5)
+            ->whereIn('status', \App\Models\Winner::ACTIVE_STATUSES)
+            ->orderBy('position', $this->orderDir)
+            ->take(10)
             ->get()
-            ->map(function($winner) {
-                return [
-                    'id' => $winner->id,
-                    'position' => $winner->position,
-                    'status' => $winner->status,
-                    'drawn_at' => $winner->drawn_at,
-                    'coupon_code' => $winner->coupon->code ?? 'N/A',
-                    'owner_name' => $winner->coupon->owner_name ?? 'Tidak Diketahui',
-                ];
-            });
+            ->map(fn($w) => [
+                'id' => $w->id,
+                'position' => $w->position,
+                'status' => $w->status,
+                'drawn_at' => $w->drawn_at,
+                'coupon_code' => $w->coupon->code ?? 'N/A',
+                'owner_name' => $w->coupon->owner_name ?? 'Tidak Diketahui',
+            ])
+            ->toArray();
     }
-    
-    public function drawWinner()
+
+    public function drawWinner(): void
     {
         try {
             $lotteryService = app(LotteryService::class);
-            
+
             if (!$lotteryService->canDraw()) {
                 Notification::make()
                     ->warning()
@@ -67,17 +85,13 @@ class DrawLotteryWidget extends Component
                     ->send();
                 return;
             }
-            
-            // Start drawing animation
+
             $this->isDrawing = true;
             $this->dispatch('start-drawing');
-            
-            // Small delay for animation effect
-            usleep(500000); // 0.5 second
-            
-            // Draw single winner
-            $winners = $lotteryService->drawWinners(1);
-            
+
+            // Draw the winner(s)
+            $winners = $lotteryService->drawWinners($this->drawCount);
+
             if (empty($winners)) {
                 $this->isDrawing = false;
                 Notification::make()
@@ -87,54 +101,48 @@ class DrawLotteryWidget extends Component
                     ->send();
                 return;
             }
-            
+
+            // Take the first winner for the reveal animation
             $this->currentWinner = $winners[0];
             $this->showConfetti = true;
             $this->isDrawing = false;
-            
+
             $this->loadStats();
             $this->loadLatestWinners();
-            
-            Notification::make()
-                ->success()
-                ->title('🎉 Selamat! Pemenang Terpilih')
-                ->body("Pemenang posisi {$this->currentWinner['position']}: {$this->currentWinner['owner_name']}")
-                ->duration(5000)
-                ->send();
-            
-            // Dispatch confetti event
-            $this->dispatch('winner-drawn', winner: $this->currentWinner);
 
-            // Auto hide confetti after 5 seconds - PUT IT HERE
+            // Dispatch to Alpine — triggers drumroll end + fullscreen celebration
+            $this->dispatch('winners-revealed', winners: $winners);
             $this->dispatch('hide-confetti-after-delay');
-            
-            // Auto hide confetti after 5 seconds
-            // $this->dispatch('hide-confetti')->delay(5000);
-            
+
         } catch (\Exception $e) {
             $this->isDrawing = false;
             logger()->error('Draw lottery error: ' . $e->getMessage());
-            
+
             Notification::make()
                 ->danger()
                 ->title('Gagal Mengundi')
-                ->body('Terjadi kesalahan saat mengundi. Silakan coba lagi.')
+                ->body('Terjadi kesalahan: ' . $e->getMessage())
                 ->send();
         }
     }
-    
-    public function hideConfetti()
+
+    public function hideConfetti(): void
     {
         $this->showConfetti = false;
         $this->currentWinner = null;
     }
-    
-    public function refreshData()
+
+    public function refreshData(): void
     {
+        $this->drawCount = (int) LotterySetting::getValue('draw_count_ui', 1);
+        $this->orderDir = LotterySetting::getValue('winner_order_ui', 'asc');
+        $this->showShuffleNames = (bool) LotterySetting::getValue('show_shuffle_names_ui', true);
+
+        $this->couponNames = Coupon::pluck('owner_name')->shuffle()->values()->toArray();
         $this->loadStats();
         $this->loadLatestWinners();
     }
-    
+
     public function render()
     {
         return view('livewire.draw-lottery-widget');

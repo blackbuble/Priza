@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Coupon extends Model
 {
+    use HasFactory;
     protected $fillable = ['code', 'owner_name', 'phone', 'email'];
 
     public function winner()
@@ -15,7 +17,7 @@ class Coupon extends Model
 
     public function activeWinner()
     {
-        return $this->hasOne(Winner::class)->whereIn('status', ['pending', 'confirmed']);
+        return $this->hasOne(Winner::class)->whereIn('status', Winner::ACTIVE_STATUSES);
     }
 
     public function isWinner()
@@ -29,8 +31,8 @@ class Coupon extends Model
      */
     public function scopeAvailableForDraw($query)
     {
-        return $query->whereDoesntHave('winner', function($q) {
-            $q->whereIn('status', ['pending', 'confirmed']);
+        return $query->whereDoesntHave('winner', function ($q) {
+            $q->whereIn('status', Winner::ACTIVE_STATUSES);
         });
     }
 
@@ -39,8 +41,8 @@ class Coupon extends Model
      */
     public function scopeHasWon($query)
     {
-        return $query->whereHas('winner', function($q) {
-            $q->whereIn('status', ['pending', 'confirmed']);
+        return $query->whereHas('winner', function ($q) {
+            $q->whereIn('status', Winner::ACTIVE_STATUSES);
         });
     }
 

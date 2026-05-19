@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\NotifiesLotteryActions;
 use App\Filament\Resources\LotterySettingResource\Pages;
 use App\Models\LotterySetting;
 use Filament\Forms;
@@ -16,6 +17,8 @@ use App\Services\LotteryService;
 
 class LotterySettingResource extends Resource
 {
+    use NotifiesLotteryActions;
+
     protected static ?string $model = LotterySetting::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cog';
@@ -57,7 +60,7 @@ class LotterySettingResource extends Resource
                                         ->send();
                                 }
                             }),
-                        
+
                         Forms\Components\TextInput::make('max_winners')
                             ->label('Jumlah Maksimal Pemenang')
                             ->numeric()
@@ -65,7 +68,7 @@ class LotterySettingResource extends Resource
                             ->maxValue(100)
                             ->default(fn() => LotterySetting::getValue('max_winners', '3'))
                             ->helperText('Jumlah maksimal pemenang yang akan diundi'),
-                        
+
                         Forms\Components\TextInput::make('total_winners')
                             ->label('Total Pemenang')
                             ->numeric()
@@ -75,14 +78,23 @@ class LotterySettingResource extends Resource
                             ->default(fn() => LotterySetting::getValue('total_winners', '10'))
                             ->suffix('pemenang')
                             ->helperText('Total pemenang yang akan diundi (1-100)'),
-                        
+
                         Forms\Components\Toggle::make('show_winners')
                             ->label('Tampilkan Pemenang')
                             ->default(fn() => LotterySetting::getValue('show_winners', '1') === '1')
                             ->helperText('Tampilkan pemenang secara publik'),
+
+                        Forms\Components\Select::make('draw_direction')
+                            ->label('Urutan Pengundian')
+                            ->options([
+                                'forward' => 'Dari Peringkat Pertama (1, 2, 3...)',
+                                'reverse' => 'Dari Peringkat Terakhir (10, 9, 8...)',
+                            ])
+                            ->default(fn() => LotterySetting::getValue('draw_direction', 'forward'))
+                            ->helperText('Tentukan dari mana peringkat pemenang mulai diundi'),
                     ])
                     ->columns(2),
-                
+
                 Forms\Components\Section::make('Pengaturan Otomatis')
                     ->schema([
                         Forms\Components\Toggle::make('auto_draw')
@@ -90,7 +102,7 @@ class LotterySettingResource extends Resource
                             ->default(fn() => LotterySetting::getValue('auto_draw', '0') === '1')
                             ->reactive()
                             ->helperText('Undian akan berjalan otomatis pada waktu yang ditentukan'),
-                        
+
                         Forms\Components\TimePicker::make('draw_time')
                             ->label('Waktu Undian Otomatis')
                             ->default(fn() => LotterySetting::getValue('draw_time', '18:00'))
@@ -98,7 +110,7 @@ class LotterySettingResource extends Resource
                             ->helperText('Waktu undian otomatis setiap hari'),
                     ])
                     ->columns(2),
-                
+
                 Forms\Components\Section::make('Pengumuman')
                     ->schema([
                         Forms\Components\Textarea::make('announcement')
@@ -128,10 +140,11 @@ class LotterySettingResource extends Resource
                             'auto_draw' => 'Undian Otomatis',
                             'draw_time' => 'Waktu Undian',
                             'show_winners' => 'Tampilkan Pemenang',
+                            'draw_direction' => 'Urutan Pengundian',
                         ];
                         return $descriptions[$state] ?? $state;
                     }),
-                
+
                 Tables\Columns\TextColumn::make('value')
                     ->label('Nilai')
                     ->searchable()
@@ -141,11 +154,11 @@ class LotterySettingResource extends Resource
                         }
                         return $state;
                     }),
-                
+
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipe')
                     ->badge()
-                    ->color(fn($state) => match($state) {
+                    ->color(fn($state) => match ($state) {
                         'boolean' => 'success',
                         'number' => 'warning',
                         'text' => 'gray',
@@ -153,12 +166,12 @@ class LotterySettingResource extends Resource
                         'time' => 'primary',
                         default => 'gray'
                     }),
-                
+
                 Tables\Columns\TextColumn::make('description')
                     ->label('Deskripsi')
                     ->limit(50)
                     ->toggleable(),
-                
+
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('Diperbarui')
                     ->dateTime('d/m/Y H:i')
@@ -206,14 +219,12 @@ class LotterySettingResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
-        $active = LotterySetting::getValue('lottery_active', '0');
-        return $active === '1' ? 'Aktif' : null;
+        return LotterySetting::isLotteryActive() ? 'Aktif' : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
     {
-        $active = LotterySetting::getValue('lottery_active', '0');
-        return $active === '1' ? 'success' : 'gray';
+        return LotterySetting::isLotteryActive() ? 'success' : 'gray';
     }
 
     // Add header actions for additional functionality
@@ -229,22 +240,11 @@ class LotterySettingResource extends Resource
                 ->modalDescription('Tindakan ini akan menghapus semua data pemenang. Aksi ini tidak dapat dibatalkan!')
                 ->modalSubmitActionLabel('Ya, Reset Semua')
                 ->action(function () {
-                    try {
-                        $lotteryService = app(LotteryService::class);
-                        $lotteryService->resetAllWinners();
-                        
-                        Notification::make()
-                            ->success()
-                            ->title('Reset Berhasil')
-                            ->body('Semua data pemenang telah dihapus')
-                            ->send();
-                    } catch (\Exception $e) {
-                        Notification::make()
-                            ->danger()
-                            ->title('Reset Gagal')
-                            ->body($e->getMessage())
-                            ->send();
-                    }
+                    static::runLotteryAction(
+                        fn() => app(LotteryService::class)->resetAllWinners(),
+                        'Reset Berhasil',
+                        'Semua data pemenang telah dihapus'
+                    );
                 }),
         ];
     }

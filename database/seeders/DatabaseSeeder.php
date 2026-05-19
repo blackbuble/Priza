@@ -18,8 +18,14 @@ class DatabaseSeeder extends Seeder
         // User::factory(10)->create();
 
         User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+            'name' => 'Admin Priza',
+            'email' => 'admin@priza.com',
+            'password' => bcrypt('password'),
+            'is_admin' => true,
         ]);
+
+        \App\Models\Coupon::factory(20)->create();
+
+        \App\Models\LotterySetting::where('key', 'lottery_active')->update(['value' => '1']);
     }
 }

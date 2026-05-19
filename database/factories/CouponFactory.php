@@ -19,40 +19,11 @@ class CouponFactory extends Factory
     {
         return [
             'code' => 'CPN' . Str::upper(Str::random(3)) . $this->faker->unique()->numberBetween(1000, 9999),
-            'value' => $this->faker->numberBetween(10, 100),
-            'is_used' => false,
+            'owner_name' => $this->faker->name(),
+            'phone' => $this->faker->phoneNumber(),
+            'email' => $this->faker->safeEmail(),
             'created_at' => $this->faker->dateTimeBetween('-30 days', 'now'),
             'updated_at' => now(),
         ];
-    }
-
-    /**
-     * Indicate that the coupon is used.
-     */
-    public function used(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'is_used' => true,
-        ]);
-    }
-
-    /**
-     * Indicate that the coupon has high value.
-     */
-    public function highValue(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'value' => $this->faker->numberBetween(50, 100),
-        ]);
-    }
-
-    /**
-     * Indicate that the coupon has low value.
-     */
-    public function lowValue(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'value' => $this->faker->numberBetween(10, 49),
-        ]);
     }
 }
